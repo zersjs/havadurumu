@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ⛅ 7 Günlük Hava Durumu Uygulaması
 
-## Getting Started
+Bu proje, modern web teknolojilerini kullanarak geliştirdiğim, kullanıcı dostu ve minimal tasarıma sahip bir hava durumu sorgulama uygulamasıdır. Güncel API entegrasyonu ve TypeScript odaklı mimarisiyle temiz bir kod yapısına sahiptir.
 
-First, run the development server:
+## 🚀 Öne Çıkan Özellikler
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Güncel Veri Akışı:** Gerçek zamanlı hava durumu verilerini güvenilir kaynaklardan çeker.
+- **Minimalist Tasarım:** "Focus on data" prensibiyle, kullanıcıyı yormayan sade ve modern bir arayüz.
+- **7 Günlük Tahmin:** Sadece bugünü değil, önümüzdeki 1 haftanın hava durumunu şık kartlar ile sunar.
+- **Mobil Uyumlu (Responsive):** Telefon, tablet ve masaüstü cihazlar için tam uyumlu layout.
+- **CORS Proxy Çözümü:** Dış API'lere erişimde yaşanan CORS sorunlarını Next.js API Routes (Proxy) ile profesyonelce çözdüm.
+- **Tip Güvenliği:** TypeScript interfaces kullanarak veri tutarlılığını sağladım.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Teknik Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Frontend:** React 19, Next.js 16 (App Router)
+- **Styling:** Tailwind CSS (Modern ve hızlı styling)
+- **Language:** TypeScript (Profesyonel kod yapısı)
+- **Data Fetching:** Fetch API & Next.js API Routes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 💡 Neden Bu Projeyi Yaptım?
 
-## Learn More
+Bu projeyi geliştirirken amacım hem modern Next.js 16 özelliklerini (Client/Server components) pekiştirmek hem de API yönetiminde karşılaşılan yaygın sorunlara (CORS, error handling vb.) pratik çözümler üretmekti. Özellikle minimalist tasarım ve kullanıcı deneyimi (UX) arasındaki dengeyi kurmaya odaklandım.
 
-To learn more about Next.js, take a look at the following resources:
+## 🏁 Kurulum
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Projeyi yerelinizde çalıştırmak için:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Depoyu klonlayın veya indirin.
+2. `npm install` ile bağımlılıkları yükleyin.
+3. `npm run dev` komutu ile uygulamayı başlatın.
+4. Tarayıcıda `localhost:3000` adresine gidin.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+_Bu proje geliştirme sürecimin bir parçasıdır. Sorularınız veya geri bildirimleriniz için benimle iletişime geçebilirsiniz._
