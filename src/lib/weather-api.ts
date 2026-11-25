@@ -27,6 +27,8 @@ interface ForecastResponse {
     precipitation_probability: number[];
     weather_code: number[];
     is_day: number[];
+    wind_speed_10m: number[];
+    precipitation: number[];
   };
   daily: {
     time: string[];
@@ -55,7 +57,15 @@ export interface WeatherData {
     kod: number;
     gunduz: boolean;
   };
-  saatlik: { zaman: string; sicaklik: number; yagisOlasiligi: number; kod: number; gunduz: boolean }[];
+  saatlik: {
+    zaman: string;
+    sicaklik: number;
+    yagisOlasiligi: number;
+    kod: number;
+    gunduz: boolean;
+    ruzgar: number;
+    yagis: number;
+  }[];
   gunluk: {
     tarih: string;
     kod: number;
@@ -105,7 +115,7 @@ export async function getWeather(q: string): Promise<WeatherData> {
       "weather_code",
       "is_day",
     ].join(","),
-    hourly: ["temperature_2m", "precipitation_probability", "weather_code", "is_day"].join(","),
+    hourly: ["temperature_2m", "precipitation_probability", "weather_code", "is_day", "wind_speed_10m", "precipitation"].join(","),
     daily: [
       "weather_code",
       "temperature_2m_max",
@@ -137,6 +147,8 @@ export async function getWeather(q: string): Promise<WeatherData> {
       yagisOlasiligi: hourly.precipitation_probability[i] ?? 0,
       kod: hourly.weather_code[i],
       gunduz: hourly.is_day[i] === 1,
+      ruzgar: Math.round(hourly.wind_speed_10m[i]),
+      yagis: hourly.precipitation[i] ?? 0,
     };
   });
 

@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.14.0",
     "@astryxdesign/core": "^0.7.17",
     "@astryxdesign/theme-neutral": "^0.7.17",
     "@stylexjs/stylex": "^0.19.2",
@@ -17,8 +16,7 @@
     "next": "16.1.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^3.11.1",
-    "zod": "^4.6.7"
+    "recharts": "^3.11.1"
   },
   "devDependencies": {
     "@astryxdesign/cli": "^0.7.17",
