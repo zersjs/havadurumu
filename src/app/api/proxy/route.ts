@@ -1,38 +1,6 @@
 import { NextResponse } from "next/server";
 
 // Veriler Open-Meteo'dan alınır (ücretsiz, API anahtarı gerektirmez).
-// Yanıt, ön yüzün beklediği formata (konum, tarih_saat, gunluk_tahmin) dönüştürülür.
-
-const WMO_TR: Record<number, string> = {
-  0: "Açık",
-  1: "Az bulutlu",
-  2: "Parçalı bulutlu",
-  3: "Kapalı",
-  45: "Sisli",
-  48: "Kırağılı sis",
-  51: "Hafif çisenti",
-  53: "Çisenti",
-  55: "Yoğun çisenti",
-  56: "Donan çisenti",
-  57: "Yoğun donan çisenti",
-  61: "Hafif yağmur",
-  63: "Yağmur",
-  65: "Şiddetli yağmur",
-  66: "Donan yağmur",
-  67: "Şiddetli donan yağmur",
-  71: "Hafif kar",
-  73: "Kar",
-  75: "Yoğun kar",
-  77: "Kar taneleri",
-  80: "Hafif sağanak",
-  81: "Sağanak",
-  82: "Şiddetli sağanak",
-  85: "Hafif kar sağanağı",
-  86: "Yoğun kar sağanağı",
-  95: "Gök gürültülü fırtına",
-  96: "Dolulu fırtına",
-  99: "Şiddetli dolulu fırtına",
-};
 
 interface GeoResult {
   name: string;
@@ -40,9 +8,28 @@ interface GeoResult {
   longitude: number;
   country?: string;
   admin1?: string;
+  timezone?: string;
 }
 
 interface ForecastResponse {
+  timezone: string;
+  current: {
+    time: string;
+    temperature_2m: number;
+    apparent_temperature: number;
+    relative_humidity_2m: number;
+    wind_speed_10m: number;
+    precipitation: number;
+    weather_code: number;
+    is_day: number;
+  };
+  hourly: {
+    time: string[];
+    temperature_2m: number[];
+    precipitation_probability: number[];
+    weather_code: number[];
+    is_day: number[];
+  };
   daily: {
     time: string[];
     weather_code: number[];
@@ -51,7 +38,39 @@ interface ForecastResponse {
     relative_humidity_2m_mean: number[];
     wind_speed_10m_max: number[];
     precipitation_sum: number[];
+    precipitation_probability_max: number[];
+    sunrise: string[];
+    sunset: string[];
+    uv_index_max: number[];
   };
+}
+
+export interface WeatherData {
+  konum: { ad: string; bolge: string | null; ulke: string | null };
+  simdi: {
+    zaman: string;
+    sicaklik: number;
+    hissedilen: number;
+    nem: number;
+    ruzgar: number;
+    yagis: number;
+    kod: number;
+    gunduz: boolean;
+  };
+  saatlik: { zaman: string; sicaklik: number; yagisOlasiligi: number; kod: number; gunduz: boolean }[];
+  gunluk: {
+    tarih: string;
+    kod: number;
+    enYuksek: number;
+    enDusuk: number;
+    nem: number;
+    ruzgar: number;
+    yagis: number;
+    yagisOlasiligi: number;
+    gunDogumu: string;
+    gunBatimi: string;
+    uv: number;
+  }[];
 }
 
 export async function GET(request: Request) {
@@ -71,12 +90,22 @@ export async function GET(request: Request) {
     const place = geo.results?.[0];
 
     if (!place) {
-      return NextResponse.json({ error: "Şehir bulunamadı." }, { status: 404 });
+      return NextResponse.json({ error: `"${q}" adında bir şehir bulunamadı.` }, { status: 404 });
     }
 
     const params = new URLSearchParams({
       latitude: String(place.latitude),
       longitude: String(place.longitude),
+      current: [
+        "temperature_2m",
+        "apparent_temperature",
+        "relative_humidity_2m",
+        "wind_speed_10m",
+        "precipitation",
+        "weather_code",
+        "is_day",
+      ].join(","),
+      hourly: ["temperature_2m", "precipitation_probability", "weather_code", "is_day"].join(","),
       daily: [
         "weather_code",
         "temperature_2m_max",
@@ -84,34 +113,66 @@ export async function GET(request: Request) {
         "relative_humidity_2m_mean",
         "wind_speed_10m_max",
         "precipitation_sum",
+        "precipitation_probability_max",
+        "sunrise",
+        "sunset",
+        "uv_index_max",
       ].join(","),
       timezone: "auto",
       forecast_days: "7",
     });
     const fcRes = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
     if (!fcRes.ok) throw new Error(`Forecast HTTP ${fcRes.status}`);
-    const { daily }: ForecastResponse = await fcRes.json();
+    const fc: ForecastResponse = await fcRes.json();
+    const { current, hourly, daily } = fc;
 
-    const gunluk_tahmin = daily.time.map((tarih, i) => ({
-      tarih,
-      en_yuksek: `${Math.round(daily.temperature_2m_max[i])}°C`,
-      en_dusuk: `${Math.round(daily.temperature_2m_min[i])}°C`,
-      durum: WMO_TR[daily.weather_code[i]] ?? "Bilinmiyor",
-      nem: `%${Math.round(daily.relative_humidity_2m_mean[i])}`,
-      ruzgarHizi: `${Math.round(daily.wind_speed_10m_max[i])} km/s`,
-      yagis: `${daily.precipitation_sum[i]} mm`,
-    }));
-
-    const konum = [place.name, place.admin1 !== place.name ? place.admin1 : null, place.country]
-      .filter(Boolean)
-      .join(", ");
-
-    return NextResponse.json({
-      success: true,
-      konum,
-      tarih_saat: new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" }),
-      gunluk_tahmin,
+    // Önümüzdeki 24 saat (şu anki saatten başlayarak, konumun yerel saatine göre)
+    const currentHour = current.time.slice(0, 13); // "YYYY-MM-DDTHH"
+    const startIdx = Math.max(0, hourly.time.findIndex((t) => t.startsWith(currentHour)));
+    const saatlik = hourly.time.slice(startIdx, startIdx + 24).map((zaman, j) => {
+      const i = startIdx + j;
+      return {
+        zaman,
+        sicaklik: Math.round(hourly.temperature_2m[i]),
+        yagisOlasiligi: hourly.precipitation_probability[i] ?? 0,
+        kod: hourly.weather_code[i],
+        gunduz: hourly.is_day[i] === 1,
+      };
     });
+
+    const data: WeatherData = {
+      konum: {
+        ad: place.name,
+        bolge: place.admin1 && place.admin1 !== place.name ? place.admin1 : null,
+        ulke: place.country ?? null,
+      },
+      simdi: {
+        zaman: current.time,
+        sicaklik: Math.round(current.temperature_2m),
+        hissedilen: Math.round(current.apparent_temperature),
+        nem: Math.round(current.relative_humidity_2m),
+        ruzgar: Math.round(current.wind_speed_10m),
+        yagis: current.precipitation,
+        kod: current.weather_code,
+        gunduz: current.is_day === 1,
+      },
+      saatlik,
+      gunluk: daily.time.map((tarih, i) => ({
+        tarih,
+        kod: daily.weather_code[i],
+        enYuksek: Math.round(daily.temperature_2m_max[i]),
+        enDusuk: Math.round(daily.temperature_2m_min[i]),
+        nem: Math.round(daily.relative_humidity_2m_mean[i]),
+        ruzgar: Math.round(daily.wind_speed_10m_max[i]),
+        yagis: Math.round(daily.precipitation_sum[i] * 10) / 10,
+        yagisOlasiligi: daily.precipitation_probability_max[i] ?? 0,
+        gunDogumu: daily.sunrise[i],
+        gunBatimi: daily.sunset[i],
+        uv: Math.round(daily.uv_index_max[i] ?? 0),
+      })),
+    };
+
+    return NextResponse.json(data);
   } catch (err) {
     console.error("Hava durumu alınamadı:", err);
     return NextResponse.json(
