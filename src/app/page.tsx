@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { Layout, LayoutContent, LayoutHeader, VStack, HStack } from "@astryxdesign/core/Layout";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { Card } from "@astryxdesign/core/Card";
@@ -16,9 +16,10 @@ import { Item } from "@astryxdesign/core/Item";
 import { Link } from "@astryxdesign/core/Link";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CloudSun, Droplets, MapPin, Sunrise, Thermometer, Umbrella, Wind } from "lucide-react";
+import { CloudSun, Droplets, MapPin, Sparkles, Sunrise, Thermometer, TriangleAlert, Umbrella, Wind } from "lucide-react";
 
-import type { WeatherData } from "./api/proxy/route";
+import type { WeatherData } from "@/lib/weather-api";
+import type { AiSummary } from "@/lib/ai-summary";
 import {
   TONE_TEXT_CLASS,
   describe,
@@ -32,6 +33,12 @@ const QUICK_CITIES = ["İstanbul", "Ankara", "İzmir", "Antalya", "Bursa", "Trab
 const STORAGE_KEY = "havadurumu:sonSehir";
 
 type SvgIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
+type SummaryState =
+  | { status: "loading" }
+  | { status: "ready"; value: AiSummary }
+  | { status: "error"; message: string }
+  | { status: "unavailable" };
 
 // ============= ÖZET KUTUCUKLARI =============
 
@@ -163,9 +170,60 @@ function LoadingState() {
   );
 }
 
+// ============= DURUM DEĞERLENDİRMESİ (YAPAY ZEKA) =============
+
+function AiSummaryCard({ state }: { state: SummaryState }) {
+  if (state.status === "unavailable") return null;
+  return (
+    <Card>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center">
+          <Icon icon={Sparkles} size="sm" color="accent" />
+          <Text type="supporting" color="secondary" weight="medium">
+            Durum değerlendirmesi
+          </Text>
+        </HStack>
+        {state.status === "loading" && (
+          <VStack gap={2} aria-busy="true" aria-label="Durum değerlendirmesi hazırlanıyor">
+            <Skeleton height={24} width="40%" />
+            <Skeleton height={16} index={1} />
+            <Skeleton height={16} width="85%" index={2} />
+          </VStack>
+        )}
+        {state.status === "error" && (
+          <Text color="secondary">{state.message}</Text>
+        )}
+        {state.status === "ready" && (
+          <VStack gap={3}>
+            <Heading level={3} accessibilityLevel={2}>
+              {state.value.baslik}
+            </Heading>
+            <Text as="p" textWrap="pretty">
+              {state.value.ozet}
+            </Text>
+            {state.value.uyarilar.length > 0 && (
+              <VStack gap={2}>
+                {state.value.uyarilar.map((u) => (
+                  <HStack key={u} gap={2} vAlign="start">
+                    <Icon icon={TriangleAlert} size="sm" color="warning" />
+                    <Text>{u}</Text>
+                  </HStack>
+                ))}
+              </VStack>
+            )}
+            <Text type="supporting" color="secondary">
+              Bu değerlendirme yapay zeka tarafından aşağıdaki verilerden otomatik oluşturulmuştur.
+            </Text>
+          </VStack>
+        )}
+      </VStack>
+    </Card>
+  );
+}
+
 // ============= HAVA DURUMU İÇERİĞİ =============
 
-function Forecast({ data }: { data: WeatherData }) {
+function Forecast({ data, summary }: { data: WeatherData; summary: SummaryState }) {
   const { konum, simdi, saatlik, gunluk } = data;
   const now = describe(simdi.kod, simdi.gunduz);
   const today = gunluk[0];
@@ -209,6 +267,8 @@ function Forecast({ data }: { data: WeatherData }) {
           <HeroIcon aria-hidden className={`hidden size-28 sm:block ${TONE_TEXT_CLASS[now.tone]}`} strokeWidth={1.25} />
         </HStack>
       </Card>
+
+      <AiSummaryCard state={summary} />
 
       {/* Özet kutucukları */}
       <Grid columns={{ minWidth: 150, repeat: "fit" }} gap={4}>
@@ -309,6 +369,23 @@ export default function Home() {
   const [data, setData] = useState<WeatherData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<SummaryState>({ status: "loading" });
+  const requestId = useRef(0);
+
+  // Hava verisi ekrana gelir gelmez değerlendirmeyi ayrıca ister; eski şehrin geç gelen yanıtı yok sayılır.
+  const loadSummary = useCallback(async (q: string, id: number) => {
+    setSummary({ status: "loading" });
+    try {
+      const res = await fetch(`/api/ozet?q=${encodeURIComponent(q)}`);
+      const body = await res.json().catch(() => ({}));
+      if (id !== requestId.current) return;
+      if (res.ok) setSummary({ status: "ready", value: body as AiSummary });
+      else if (body.code === "unavailable") setSummary({ status: "unavailable" });
+      else setSummary({ status: "error", message: body.error || "Değerlendirme şu an alınamadı." });
+    } catch {
+      if (id === requestId.current) setSummary({ status: "error", message: "Değerlendirme şu an alınamadı." });
+    }
+  }, []);
 
   const load = useCallback(async (name: string) => {
     const q = name.trim();
@@ -325,6 +402,7 @@ export default function Home() {
         throw new Error(body.error || "Bir hata oluştu.");
       }
       setData(body as WeatherData);
+      void loadSummary(q, ++requestId.current);
       try {
         localStorage.setItem(STORAGE_KEY, q);
       } catch {
@@ -335,7 +413,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadSummary]);
 
   // İlk açılışta son aranan şehri (yoksa İstanbul'u) göster
   useEffect(() => {
@@ -402,7 +480,7 @@ export default function Home() {
 
             {error && <Banner status="error" title={error} isDismissable onDismiss={() => setError(null)} />}
 
-            {data ? <Forecast data={data} /> : loading ? <LoadingState /> : null}
+            {data ? <Forecast data={data} summary={summary} /> : loading ? <LoadingState /> : null}
 
             <Text type="supporting" color="secondary" justify="center">
               Veriler{" "}
