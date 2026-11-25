@@ -20,33 +20,6 @@ interface WeatherResponse {
   error?: string;
 }
 
-const WeatherCard = ({ day }: { day: DailyForecast }) => {
-  const formattedDate = new Date(day.tarih).toLocaleDateString("tr-TR", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-
-  return (
-    <div className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center text-center transition-all hover:border-blue-200 dark:hover:border-blue-900 shadow-sm">
-      <p className="font-bold text-sm text-zinc-500 mb-2 uppercase tracking-tight">
-        {formattedDate}
-      </p>
-      <div className="my-2">
-        <span className="text-2xl font-bold block text-zinc-900 dark:text-zinc-100 italic">
-          {day.en_yuksek}
-        </span>
-        <span className="text-xs text-zinc-400 font-medium">
-          {day.en_dusuk}
-        </span>
-      </div>
-      <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-bold mt-1 tracking-wider">
-        {day.durum}
-      </p>
-    </div>
-  );
-};
-
 export default function Home() {
   const [city, setCity] = useState("");
   const [weatherData, setWeatherData] = useState<WeatherResponse | null>(null);
@@ -67,12 +40,13 @@ export default function Home() {
     
     try {
       const response = await fetch(`/api/proxy?q=${encodeURIComponent(searchCity)}`);
-      if (!response.ok) throw new Error("Şehir bulunamadı.");
-      const data: WeatherResponse = await response.json();
-      if (data.error) throw new Error(data.error);
+      const data: WeatherResponse = await response.json().catch(() => ({}) as WeatherResponse);
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Bir hata oluştu.");
+      }
       setWeatherData(data);
-    } catch (err: any) {
-      setError(err.message || "Bir hata oluştu.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bir hata oluştu.");
     } finally {
       setLoading(false);
     }
@@ -142,7 +116,7 @@ export default function Home() {
 
         <footer className="pt-12 border-t border-zinc-100 dark:border-zinc-900 text-center">
           <p className="text-zinc-400 text-[10px] font-medium tracking-wide leading-relaxed">
-            Hava Durumu verileri <a href="https://apiservisim.vercel.app" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">apiservisim.vercel.app</a> adresinden alınmaktadır.
+            Hava Durumu verileri <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">Open-Meteo</a> adresinden alınmaktadır.
           </p>
         </footer>
       </div>
