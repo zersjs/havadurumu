@@ -1,152 +1,458 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { Layout, LayoutContent, LayoutHeader, VStack, HStack } from "@astryxdesign/core/Layout";
+import { Text, Heading } from "@astryxdesign/core/Text";
+import { Card } from "@astryxdesign/core/Card";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Grid } from "@astryxdesign/core/Grid";
+import { Icon } from "@astryxdesign/core/Icon";
+import { Token } from "@astryxdesign/core/Token";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { List } from "@astryxdesign/core/List";
+import { Item } from "@astryxdesign/core/Item";
+import { Link } from "@astryxdesign/core/Link";
+import { StackItem } from "@astryxdesign/core/Stack";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Activity, CloudSun, Droplets, MapPin, Sunrise, Thermometer, TriangleAlert, Umbrella, Wind } from "lucide-react";
 
-interface DailyForecast {
-  tarih: string;
-  en_dusuk: string;
-  en_yuksek: string;
-  durum: string;
-  nem: string;  
-  ruzgarHizi: string;
-  yagis: string;
+import type { WeatherData } from "@/lib/weather-api";
+import { durumuDegerlendir, hissedilenAciklamasi, type DurumRaporu } from "@/lib/durum-analizi";
+import {
+  TONE_TEXT_CLASS,
+  describe,
+  formatDay,
+  formatHour,
+  formatLongDateTime,
+  formatShortDate,
+} from "./weather";
+
+const QUICK_CITIES = ["İstanbul", "Ankara", "İzmir", "Antalya", "Bursa", "Trabzon"];
+const STORAGE_KEY = "havadurumu:sonSehir";
+
+type SvgIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
+// ============= ÖZET KUTUCUKLARI =============
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: SvgIcon;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <Card>
+      <VStack gap={2}>
+        <HStack gap={2} vAlign="center">
+          <Icon icon={icon} size="sm" color="secondary" />
+          <Text type="supporting" color="secondary">
+            {label}
+          </Text>
+        </HStack>
+        <Heading level={2} accessibilityLevel={3}>
+          {value}
+        </Heading>
+        <Text type="supporting" color="secondary">
+          {hint}
+        </Text>
+      </VStack>
+    </Card>
+  );
 }
 
-interface WeatherResponse {
-  konum: string;
-  gunluk_tahmin: DailyForecast[];
-  tarih_saat: string;
-  success?: boolean;
-  error?: string;
+// ============= SAATLİK GRAFİK =============
+
+type HourPoint = WeatherData["saatlik"][number];
+
+const chartColor = "var(--color-data-categorical-orange)";
+const axisTick = {
+  fontSize: "var(--font-size-sm)",
+  fill: "var(--color-text-secondary)",
+};
+
+function HourTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: HourPoint }> }) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  const cond = describe(point.kod, point.gunduz);
+  return (
+    <Card padding={3} elevation="med">
+      <VStack gap={1}>
+        <Text type="supporting" color="secondary">
+          {formatHour(point.zaman)}
+        </Text>
+        <HStack gap={2} vAlign="center">
+          <Icon icon={cond.icon} size="sm" color={cond.tone} />
+          <Text weight="semibold">{point.sicaklik}°</Text>
+          <Text type="supporting" color="secondary">
+            {cond.label}
+          </Text>
+        </HStack>
+        <Text type="supporting" color="secondary">
+          Yağış ihtimali %{point.yagisOlasiligi}
+        </Text>
+      </VStack>
+    </Card>
+  );
 }
 
-const WeatherCard = ({ day }: { day: DailyForecast }) => {
-  const formattedDate = new Date(day.tarih).toLocaleDateString("tr-TR", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+function HourlyChart({ data }: { data: HourPoint[] }) {
+  const temps = data.map((d) => d.sicaklik);
+  const min = Math.floor(Math.min(...temps)) - 2;
+  const max = Math.ceil(Math.max(...temps)) + 2;
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="tempFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={chartColor} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} stroke="var(--color-border)" />
+        <XAxis
+          dataKey="zaman"
+          tickFormatter={formatHour}
+          interval="preserveStartEnd"
+          minTickGap={24}
+          tick={axisTick}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          domain={[min, max]}
+          allowDecimals={false}
+          tickFormatter={(v: number) => `${v}°`}
+          tick={axisTick}
+          axisLine={false}
+          tickLine={false}
+          width={40}
+        />
+        <Tooltip content={<HourTooltip />} cursor={{ stroke: "var(--color-border-emphasized)" }} />
+        <Area
+          type="monotone"
+          dataKey="sicaklik"
+          name="Sıcaklık"
+          stroke={chartColor}
+          strokeWidth={2}
+          fill="url(#tempFill)"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ============= YÜKLENİYOR =============
+
+function LoadingState() {
+  return (
+    <VStack gap={6}>
+      <Skeleton height={220} radius={4} />
+      <Grid columns={{ minWidth: 180, repeat: "fit" }} gap={4}>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} height={120} radius={4} index={i} />
+        ))}
+      </Grid>
+      <Skeleton height={280} radius={4} index={4} />
+    </VStack>
+  );
+}
+
+// ============= DURUM DEĞERLENDİRMESİ =============
+
+function DurumKarti({ rapor }: { rapor: DurumRaporu }) {
+  return (
+    <Card>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center">
+          <Icon icon={Activity} size="sm" color="accent" />
+          <Text type="supporting" color="secondary" weight="medium">
+            Durum değerlendirmesi
+          </Text>
+        </HStack>
+        <Heading level={3} accessibilityLevel={2}>
+          {rapor.baslik}
+        </Heading>
+        <VStack gap={1}>
+          <Text weight="semibold">Bugün</Text>
+          <Text as="p" textWrap="pretty">
+            {rapor.bugun}
+          </Text>
+        </VStack>
+        <VStack gap={1}>
+          <Text weight="semibold">Önümüzdeki günler</Text>
+          <Text as="p" textWrap="pretty">
+            {rapor.gelecek}
+          </Text>
+        </VStack>
+        {rapor.uyarilar.length > 0 && (
+          <VStack gap={2}>
+            {rapor.uyarilar.map((u) => (
+              <HStack key={u} gap={2} vAlign="start">
+                <Icon icon={TriangleAlert} size="sm" color="warning" />
+                <Text>{u}</Text>
+              </HStack>
+            ))}
+          </VStack>
+        )}
+      </VStack>
+    </Card>
+  );
+}
+
+// ============= HAVA DURUMU İÇERİĞİ =============
+
+function Forecast({ data }: { data: WeatherData }) {
+  const { konum, simdi, saatlik, gunluk } = data;
+  const now = describe(simdi.kod, simdi.gunduz);
+  const today = gunluk[0];
+  const HeroIcon = now.icon;
+  const rapor = useMemo(() => durumuDegerlendir(data), [data]);
+  const subtitle = [konum.bolge, konum.ulke].filter(Boolean).join(", ");
 
   return (
-    <div className="p-4 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center text-center transition-all hover:border-blue-200 dark:hover:border-blue-900 shadow-sm">
-      <p className="font-bold text-sm text-zinc-500 mb-2 uppercase tracking-tight">
-        {formattedDate}
-      </p>
-      <div className="my-2">
-        <span className="text-2xl font-bold block text-zinc-900 dark:text-zinc-100 italic">
-          {day.en_yuksek}
-        </span>
-        <span className="text-xs text-zinc-400 font-medium">
-          {day.en_dusuk}
-        </span>
-      </div>
-      <p className="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-bold mt-1 tracking-wider">
-        {day.durum}
-      </p>
-    </div>
+    <VStack gap={6}>
+      {/* Anlık durum */}
+      <Card padding={6} variant={simdi.gunduz ? "blue" : "purple"}>
+        <HStack gap={6} hAlign="between" vAlign="center" wrap="wrap">
+          <VStack gap={3}>
+            <VStack gap={1}>
+              {subtitle && (
+                <HStack gap={1} vAlign="center">
+                  <Icon icon={MapPin} size="xsm" color="secondary" />
+                  <Text type="supporting" color="secondary">
+                    {subtitle}
+                  </Text>
+                </HStack>
+              )}
+              <Heading level={1}>{konum.ad}</Heading>
+              <Text type="supporting" color="secondary">
+                {formatLongDateTime(simdi.zaman)} (yerel saat)
+              </Text>
+            </VStack>
+            <HStack gap={4} vAlign="center">
+              <Text type="display-1" hasTabularNumbers>
+                {simdi.sicaklik}°
+              </Text>
+              <VStack gap={1}>
+                <Text type="large" weight="semibold">
+                  {now.label}
+                </Text>
+                <Text color="secondary">
+                  En yüksek {today.enYuksek}° · En düşük {today.enDusuk}°
+                </Text>
+              </VStack>
+            </HStack>
+          </VStack>
+          <HeroIcon aria-hidden className={`hidden size-28 sm:block ${TONE_TEXT_CLASS[now.tone]}`} strokeWidth={1.25} />
+        </HStack>
+      </Card>
+
+      <DurumKarti rapor={rapor} />
+
+      {/* Özet kutucukları */}
+      <Grid columns={{ minWidth: 150, repeat: "fit" }} gap={4}>
+        <MetricTile
+          icon={Thermometer}
+          label="Hissedilen"
+          value={`${simdi.hissedilen}°`}
+          hint={hissedilenAciklamasi(simdi)}
+        />
+        <MetricTile icon={Droplets} label="Nem" value={`%${simdi.nem}`} hint={`Günlük ortalama %${today.nem}`} />
+        <MetricTile
+          icon={Wind}
+          label="Rüzgar"
+          value={`${simdi.ruzgar} km/s`}
+          hint={`Bugün en fazla ${today.ruzgar} km/s`}
+        />
+        <MetricTile
+          icon={Umbrella}
+          label="Yağış ihtimali"
+          value={`%${today.yagisOlasiligi}`}
+          hint={today.yagis > 0 ? `Bugün toplam ${today.yagis} mm` : "Bugün yağış beklenmiyor"}
+        />
+        <MetricTile
+          icon={Sunrise}
+          label="Gün doğumu / batımı"
+          value={`${formatHour(today.gunDogumu)} · ${formatHour(today.gunBatimi)}`}
+          hint={`UV indeksi en fazla ${today.uv}`}
+        />
+      </Grid>
+
+      {/* Saatlik sıcaklık */}
+      <Card>
+        <VStack gap={4}>
+          <Heading level={3} accessibilityLevel={2}>
+            Önümüzdeki 24 saat
+          </Heading>
+          <HourlyChart data={saatlik} />
+        </VStack>
+      </Card>
+
+      {/* 7 günlük tahmin */}
+      <Card>
+        <VStack gap={2}>
+          <Heading level={3} accessibilityLevel={2}>
+            7 günlük tahmin
+          </Heading>
+          <List hasDividers edge="flush">
+            {gunluk.map((day, i) => {
+              const cond = describe(day.kod);
+              return (
+                <Item
+                  key={day.tarih}
+                  as="li"
+                  startContent={<Icon icon={cond.icon} size="lg" color={cond.tone} />}
+                  label={formatDay(day.tarih, i)}
+                  description={`${formatShortDate(day.tarih)} · ${cond.label}`}
+                  endContent={
+                    <HStack gap={4} vAlign="center">
+                      {day.yagisOlasiligi >= 20 && (
+                        <HStack gap={1} vAlign="center">
+                          <Icon icon={Droplets} size="xsm" color="blue" />
+                          <Text type="supporting" color="secondary" hasTabularNumbers>
+                            %{day.yagisOlasiligi}
+                          </Text>
+                        </HStack>
+                      )}
+                      <HStack gap={2} vAlign="center">
+                        <Text color="secondary" hasTabularNumbers>
+                          {day.enDusuk}°
+                        </Text>
+                        <Text color="secondary">/</Text>
+                        <Text weight="semibold" hasTabularNumbers>
+                          {day.enYuksek}°
+                        </Text>
+                      </HStack>
+                    </HStack>
+                  }
+                />
+              );
+            })}
+          </List>
+        </VStack>
+      </Card>
+    </VStack>
   );
-};
+}
+
+// ============= SAYFA =============
 
 export default function Home() {
   const [city, setCity] = useState("");
-  const [weatherData, setWeatherData] = useState<WeatherResponse | null>(null);
+  const [data, setData] = useState<WeatherData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const fetchWeather = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const searchCity = city.trim();
-    if (!searchCity) {
-      setError("Şehir adı girin.");
+  const load = useCallback(async (name: string) => {
+    const q = name.trim();
+    if (!q) {
+      setError("Lütfen bir şehir adı girin.");
       return;
     }
-
     setLoading(true);
     setError(null);
-    setWeatherData(null);
-    
     try {
-      const response = await fetch(`/api/proxy?q=${encodeURIComponent(searchCity)}`);
-      if (!response.ok) throw new Error("Şehir bulunamadı.");
-      const data: WeatherResponse = await response.json();
-      if (data.error) throw new Error(data.error);
-      setWeatherData(data);
-    } catch (err: any) {
-      setError(err.message || "Bir hata oluştu.");
+      const res = await fetch(`/api/proxy?q=${encodeURIComponent(q)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || "error" in body) {
+        throw new Error(body.error || "Bir hata oluştu.");
+      }
+      setData(body as WeatherData);
+      try {
+        localStorage.setItem(STORAGE_KEY, q);
+      } catch {
+        // Tarayıcı depolaması kapalıysa son şehri hatırlamayız; sorun değil.
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bir hata oluştu.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // İlk açılışta son aranan şehri (yoksa İstanbul'u) göster
+  useEffect(() => {
+    let initial = "İstanbul";
+    try {
+      initial = localStorage.getItem(STORAGE_KEY) || initial;
+    } catch {
+      // yok say
+    }
+    void load(initial);
+  }, [load]);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-zinc-900 dark:text-zinc-100 p-6 flex flex-col items-center font-sans tracking-tight">
-      <div className="w-full max-w-2xl space-y-12 py-10">
-        <header className="text-center">
-          <h1 className="text-2xl font-bold">Hava Durumu</h1>
-        </header>
+    <Layout
+      height="auto"
+      contentWidth={960}
+      header={
+        <LayoutHeader hasDivider padding={4}>
+          <HStack gap={2} vAlign="center">
+            <Icon icon={CloudSun} color="accent" />
+            <Heading level={4} accessibilityLevel={2}>
+              Hava Durumu
+            </Heading>
+          </HStack>
+        </LayoutHeader>
+      }
+      content={
+        <LayoutContent role="main" padding={6} isScrollable={false}>
+          <VStack gap={6}>
+            <VStack gap={3}>
+              <HStack gap={2} vAlign="end">
+                <StackItem size="fill">
+                  <TextInput
+                  type="search"
+                  label="Şehir ara"
+                  isLabelHidden
+                  placeholder="Şehir adı yazın, örneğin Eskişehir"
+                  startIcon="search"
+                  value={city}
+                  onChange={(v) => setCity(v)}
+                  onEnter={() => void load(city)}
+                  enterKeyHint="search"
+                  hasClear
+                  width="100%"
+                  size="lg"
+                  />
+                </StackItem>
+                <Button label="Ara" variant="primary" size="lg" isLoading={loading} onClick={() => void load(city)} />
+              </HStack>
+              <HStack gap={2} wrap="wrap">
+                {QUICK_CITIES.map((c) => (
+                  <Token
+                    key={c}
+                    label={c}
+                    size="sm"
+                    onClick={() => {
+                      setCity(c);
+                      void load(c);
+                    }}
+                  />
+                ))}
+              </HStack>
+            </VStack>
 
-        <form onSubmit={fetchWeather} className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            placeholder="Şehir adı..."
-            value={city}
-            onClick={() => setError(null)}
-            onChange={(e) => setCity(e.target.value)}
-            className="flex-1 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2 outline-none focus:border-blue-500 text-center transition-all"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-lg font-medium hover:opacity-80 disabled:opacity-50 transition-all"
-          >
-            {loading ? "..." : "Sorgula"}
-          </button>
-        </form>
+            {error && <Banner status="error" title={error} isDismissable onDismiss={() => setError(null)} />}
 
-        {error && (
-          <p className="text-center text-red-500 text-sm font-medium">{error}</p>
-        )}
+            {data ? <Forecast data={data} /> : loading ? <LoadingState /> : null}
 
-        {weatherData && (
-          <div className="space-y-12">
-            <div className="text-center">
-              <h2 className="text-3xl font-bold">{weatherData.konum}</h2>
-              <p className="text-zinc-400 text-xs mt-1 uppercase tracking-widest">{weatherData.tarih_saat}</p>
-              
-              {weatherData.gunluk_tahmin?.[0] && (
-                <div className="mt-6">
-                  <div className="text-6xl font-bold text-blue-600 block mb-2">
-                    {weatherData.gunluk_tahmin[0].en_yuksek}
-                  </div>
-                  <div className="text-sm font-medium opacity-70 uppercase tracking-wide">
-                    {weatherData.gunluk_tahmin[0].durum}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {weatherData.gunluk_tahmin.slice(0, 8).map((day, index) => (
-                <div key={index} className="p-4 border border-zinc-100 dark:border-zinc-900 rounded-xl text-center">
-                  <p className="text-[10px] text-zinc-400 font-bold uppercase mb-2">
-                    {new Date(day.tarih).toLocaleDateString("tr-TR", { weekday: "short", day: "numeric" })}
-                  </p>
-                  <p className="text-xl font-bold">{day.en_yuksek}</p>
-                  <p className="text-[10px] text-blue-500 font-bold uppercase mt-1">{day.durum}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <footer className="pt-12 border-t border-zinc-100 dark:border-zinc-900 text-center">
-          <p className="text-zinc-400 text-[10px] font-medium tracking-wide leading-relaxed">
-            Hava Durumu verileri <a href="https://apiservisim.vercel.app" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">apiservisim.vercel.app</a> adresinden alınmaktadır.
-          </p>
-        </footer>
-      </div>
-    </div>
+            <Text type="supporting" color="secondary" justify="center">
+              Veriler{" "}
+              <Link href="https://open-meteo.com" isExternalLink type="supporting">
+                Open-Meteo
+              </Link>{" "}
+              tarafından sağlanmaktadır.
+            </Text>
+          </VStack>
+        </LayoutContent>
+      }
+    />
   );
 }
-

@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
+import { getWeather, WeatherError } from "@/lib/weather-api";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const q = searchParams.get("q");
-
+  const q = new URL(request.url).searchParams.get("q")?.trim();
   if (!q) {
-    return NextResponse.json({ error: "Query parameter 'q' is required" }, { status: 400 });
+    return NextResponse.json({ error: "Şehir adı gerekli." }, { status: 400 });
   }
 
   try {
-    const response = await fetch(`https://apiservisim.vercel.app/api/hava/${q}?days=7`);
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to fetch data from external API" }, { status: 500 });
+    return NextResponse.json(await getWeather(q));
+  } catch (err) {
+    if (err instanceof WeatherError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    console.error("Hava durumu alınamadı:", err);
+    return NextResponse.json(
+      { error: "Hava durumu servisine ulaşılamadı. Lütfen daha sonra tekrar deneyin." },
+      { status: 502 },
+    );
   }
 }

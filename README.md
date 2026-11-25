@@ -4,9 +4,11 @@ Bu proje, modern web teknolojilerini kullanarak geliştirdiğim, kullanıcı dos
 
 ## 🚀 Öne Çıkan Özellikler
 
-- **Güncel Veri Akışı:** Gerçek zamanlı hava durumu verilerini güvenilir kaynaklardan çeker.
+- **Güncel Veri Akışı:** Anlık, saatlik ve 7 günlük verileri [Open-Meteo](https://open-meteo.com)'dan çeker (API anahtarı gerektirmez).
+- **Durum Değerlendirme Motoru:** Uygulamanın kendi analiz motoru (`src/lib/durum-analizi.ts`) anlık, saatlik ve günlük verileri yorumlayıp bülten dilinde kısa bir durum raporu yazar; don, kuvvetli rüzgar, yoğun yağış, kar, aşırı sıcak ve yüksek UV için uyarı verir. Harici bir yapay zeka servisine bağlı değildir, sohbet etmez, yalnızca durumu bildirir.
+- **Astryx Tasarım Sistemi:** Arayüz, Meta'nın açık kaynak tasarım sistemi [Astryx](https://astryx.atmeta.com) ile kuruldu; açık/koyu modu sistem ayarına göre izler.
 - **Minimalist Tasarım:** "Focus on data" prensibiyle, kullanıcıyı yormayan sade ve modern bir arayüz.
-- **7 Günlük Tahmin:** Sadece bugünü değil, önümüzdeki 1 haftanın hava durumunu şık kartlar ile sunar.
+- **7 Günlük Tahmin ve Saatlik Grafik:** Önümüzdeki 24 saatin sıcaklık grafiği ve 1 haftalık tahmin listesi.
 - **Mobil Uyumlu (Responsive):** Telefon, tablet ve masaüstü cihazlar için tam uyumlu layout.
 - **CORS Proxy Çözümü:** Dış API'lere erişimde yaşanan CORS sorunlarını Next.js API Routes (Proxy) ile profesyonelce çözdüm.
 - **Tip Güvenliği:** TypeScript interfaces kullanarak veri tutarlılığını sağladım.
@@ -14,7 +16,7 @@ Bu proje, modern web teknolojilerini kullanarak geliştirdiğim, kullanıcı dos
 ## 🛠️ Teknik Stack
 
 - **Frontend:** React 19, Next.js 16 (App Router)
-- **Styling:** Tailwind CSS (Modern ve hızlı styling)
+- **UI:** Astryx (`@astryxdesign/core`, neutral tema), Tailwind CSS köprüsü, Recharts, Lucide ikonları
 - **Language:** TypeScript (Profesyonel kod yapısı)
 - **Data Fetching:** Fetch API & Next.js API Routes
 
